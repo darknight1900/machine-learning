@@ -146,7 +146,7 @@ def train_predict(learner, sample_size, X_train, y_train, X_test, y_test):
     results['acc_test'] = accuracy_score(y_test, predictions_test)
     
     # Compute F-score on the the first 300 training samples using fbeta_score()    
-    results['f_train'] = fbeta_score(y_train[:300], predictions_train, average='weighted', beta=0.5)
+    results['f_train'] = fbeta_score(y_train[:300], predictions_train, average='binary', beta=0.5)
 
     # Compute F-score on the test set which is y_test
     results['f_test'] = fbeta_score(y_test, predictions_test, average='weighted', beta=0.5)
