@@ -126,7 +126,9 @@ class LearningAgent(Agent):
         if not self.learning or ru < self.epsilon:
             action = random.choice(self.valid_actions)
         else:
-            action = max(self.Q[state], key=self.Q[state].get)
+            max_reward = max(self.Q[state].values()) # find the max value 
+            actions_max = [x for x in self.Q[state] if self.Q[state][x] == max_reward] # get all the actions with max reward
+            action = random.choice(actions_max) # radomly select actions with max reward
         return action
 
     def learn(self, state, action, reward):
