@@ -165,7 +165,7 @@ def compute_recall_precision(hdf5_data, yolo_detector, weights=None, train='vali
         image_data = np.array(image, dtype=np.float)
         image_data /= 255.
         x_batch[cur_id] = image_data
-
+        cur_id += 1
         boxes = hdf5_boxes[sample_id]
         boxes = boxes.reshape((-1, 5))
 
@@ -190,7 +190,6 @@ def compute_recall_precision(hdf5_data, yolo_detector, weights=None, train='vali
         image_data = x_batch[i]
         boxes = yolo_detector.decode_netout(netouts[i])
         y_pred += boxes
-    # pdb.set_trace()
     get_recall_precision(y_pred, y_batch)
 
 

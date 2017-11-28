@@ -6,8 +6,8 @@ import numpy as np
 
 # If a feature extractor performed 5 max-pooling --> Image resolution being reduced 2^5 = 32 times
 # Most current state-of-the-art models have max-pooling layers (August, 2017)
-# FEATURE_EXTRACTOR = 'Darknet19'
-FEATURE_EXTRACTOR = 'MobileNet'
+FEATURE_EXTRACTOR = 'Darknet19'
+# FEATURE_EXTRACTOR = 'MobileNet'
 N_CLASSES         = 2
 N_ANCHORS         = 5
 
@@ -17,8 +17,8 @@ IMAGE_HEIGHT      = 608
 IMAGE_WIDTH       = 608
 INPUT_SHAPE       = (IMAGE_HEIGHT, IMAGE_WIDTH, 3)
 
-SHALLOW_DETECTOR        = True
-USE_THREE_SCALE_FEATURE = True
+SHALLOW_DETECTOR        = False
+USE_THREE_SCALE_FEATURE = False
 
 # Default anchor boxes
 YOLO_ANCHORS = np.array(
@@ -36,7 +36,7 @@ FEAT_W = IMAGE_WIDTH // SHRINK_FACTOR
 MAX_DETECTION_PER_IMAGE = 10
 CLASSES_PATH='model_data/uav_classes.txt'
 ANCHORS_PATH='model_data/uav_anchors.txt'
-
+DEBUG_LOSS = False
 
 ###############################################################################
 ### Note: if SHALLOW_DETECTOR True, we need scale up the anchor boxes

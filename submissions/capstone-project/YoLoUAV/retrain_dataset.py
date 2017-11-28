@@ -7,6 +7,8 @@ import os
 import PIL
 import io
 import cv2
+import time
+import datetime
 
 from argparse import ArgumentParser
 from loss import custom_loss
@@ -46,6 +48,13 @@ parser.add_argument('-b',
                     type=int, default=CFG.BATCH_SIZE)
 
 
+def get_current_timestamp():
+    ts = time.time()
+    cur_time = datetime.datetime.fromtimestamp(
+        ts).strftime('%Y-%m-%d-%H:%M:%S')
+    return cur_time
+
+
 def _main_():
     args = parser.parse_args()
     data_path = args.data_path
@@ -79,6 +88,8 @@ def _main_():
     yolo_detector = YOLODetector(feature_extractor_name=CFG.FEATURE_EXTRACTOR)
     detect_model = yolo_detector.model
     detect_model.summary()
+    if weights_path and os.path.exists(weights_path):
+        detect_model.load_weights(weights_path)
     # #################
     # COMPILE AND RUN
     # #################
@@ -94,12 +105,14 @@ def _main_():
     valid_steps_per_epoch = valid_batch_gen.training_instances // batch_size
     print('train_steps_per_epoch=', train_steps_per_epoch)
     print('valid_steps_per_epoch=', valid_steps_per_epoch)
-    
+
     num_loop_epochs = 5
     loop = num_epochs // num_loop_epochs
     for i in range(loop):
-        weight_name = 'weights/' + 'best_{}{}{}_loop_{}.h5'.format(
-            CFG.FEATURE_EXTRACTOR, int(CFG.SHALLOW_DETECTOR), int(CFG.USE_THREE_SCALE_FEATURE), i)
+        cur_time = get_current_timestamp()
+        weight_name = 'weights/' + 'best_{}{}{}_loop_{}_{}.h5'.format(
+            CFG.FEATURE_EXTRACTOR, int(CFG.SHALLOW_DETECTOR),
+            int(CFG.USE_THREE_SCALE_FEATURE), i, cur_time)
 
         checkpoint = ModelCheckpoint(
             weight_name, monitor='val_loss', save_weights_only=True, save_best_only=True)
@@ -111,12 +124,14 @@ def _main_():
                                    epochs=num_loop_epochs,
                                    workers=1,
                                    verbose=1)
-        weight_name = 'weights/' + '{}{}{}_loop_{}.h5'.format(
-            CFG.FEATURE_EXTRACTOR, CFG.SHALLOW_DETECTOR, CFG.USE_THREE_SCALE_FEATURE, i)
+        weight_name = 'weights/' + '{}{}{}_loop_{}_{}.h5'.format(
+            CFG.FEATURE_EXTRACTOR, CFG.SHALLOW_DETECTOR,
+            CFG.USE_THREE_SCALE_FEATURE, i, get_current_timestamp())
         detect_model.save_weights(weight_name)
+        
+        print('Complete traing for loop {}, saved weights {}'.format(i, weight_name))
         compute_recall_precision(
             hdf5_data, yolo_detector, weight_name, train='valid', num_samples=1024)
-
 
 if __name__ == "__main__":
     _main_()
