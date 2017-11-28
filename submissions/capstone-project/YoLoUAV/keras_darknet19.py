@@ -8,6 +8,7 @@ from keras.layers import Input, Conv2D, MaxPool2D
 from keras.layers import BatchNormalization, Activation
 from keras.layers import GlobalAvgPool2D
 from keras.layers.advanced_activations import LeakyReLU
+from keras.regularizers import l2
 
 def Darknet19(image_tensor=None, num_classes=1000, include_top=False):
     """
@@ -73,7 +74,7 @@ def conv_block(x, filters, kernel_size, name=None):
     :return:
     """
     x = Conv2D(filters=filters, kernel_size=kernel_size, padding='same',
-               use_bias=False, name=name)(x)
+               use_bias=False, name=name, kernel_regularizer=l2(5e-4))(x)
     x = BatchNormalization(name=name if name is None else 'batch_norm_%s' % name)(x)
     x = LeakyReLU(alpha=0.1, name=name if name is None else 'leaky_relu_%s' % name)(x)
     return x

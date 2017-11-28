@@ -20,6 +20,8 @@ import keras
 import tensorflow as tf
 from datagen import DataBatchGenerator
 from keras.models import load_model
+from keras.optimizers import Adam, RMSprop
+
 import keras.backend as K
 import matplotlib.pyplot as plt
 
@@ -47,6 +49,10 @@ parser.add_argument('-b',
                     help='Number of batch size',
                     type=int, default=CFG.BATCH_SIZE)
 
+parser.add_argument('-lr',
+                    '--learning_rate',
+                    help='Learning Rate',
+                    type=float, default=1e-5)
 
 def get_current_timestamp():
     ts = time.time()
@@ -54,14 +60,13 @@ def get_current_timestamp():
         ts).strftime('%Y-%m-%d-%H:%M:%S')
     return cur_time
 
-
 def _main_():
     args = parser.parse_args()
     data_path = args.data_path
     weights_path = args.weights_path
     batch_size = args.batch_size
     num_epochs = args.num_epochs
-
+    learning_rate = args.learning_rate
     # ###################
     # PREPARE DATA INPUT
     # ###################
@@ -93,7 +98,7 @@ def _main_():
     # #################
     # COMPILE AND RUN
     # #################
-    detect_model.compile(optimizer='adam', loss=custom_loss)
+
 
     train_batch_gen = DataBatchGenerator(hdf5_data, train='train', jitter=True)
     valid_batch_gen = DataBatchGenerator(hdf5_data, train='valid')
@@ -109,6 +114,9 @@ def _main_():
     num_loop_epochs = 5
     loop = num_epochs // num_loop_epochs
     for i in range(loop):
+        optimizer = RMSprop(lr=learning_rate, rho=0.9, epsilon=1e-09, decay=1e-08)
+        detect_model.compile(optimizer=optimizer, loss=custom_loss)
+
         cur_time = get_current_timestamp()
         weight_name = 'weights/' + 'best_{}{}{}_loop_{}_{}.h5'.format(
             CFG.FEATURE_EXTRACTOR, int(CFG.SHALLOW_DETECTOR),
@@ -124,14 +132,15 @@ def _main_():
                                    epochs=num_loop_epochs,
                                    workers=1,
                                    verbose=1)
-        weight_name = 'weights/' + '{}{}{}_loop_{}_{}.h5'.format(
-            CFG.FEATURE_EXTRACTOR, CFG.SHALLOW_DETECTOR,
-            CFG.USE_THREE_SCALE_FEATURE, i, get_current_timestamp())
-        detect_model.save_weights(weight_name)
-        
         print('Complete traing for loop {}, saved weights {}'.format(i, weight_name))
-        compute_recall_precision(
+        prec_rec = compute_recall_precision(
             hdf5_data, yolo_detector, weight_name, train='valid', num_samples=1024)
 
+        weight_name = 'weights/' + '{}{}{}_lp{}_{}_{}_{}_{}_{}.h5'.format(
+            CFG.FEATURE_EXTRACTOR, int(CFG.SHALLOW_DETECTOR),
+            int(CFG.USE_THREE_SCALE_FEATURE), i, get_current_timestamp(), 
+            prec_rec[0][1], prec_rec[0][2],prec_rec[1][1], prec_rec[1][2])
+        detect_model.save_weights(weight_name)
+        
 if __name__ == "__main__":
     _main_()

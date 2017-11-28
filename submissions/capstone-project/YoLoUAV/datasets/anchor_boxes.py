@@ -101,7 +101,7 @@ def main():
     print('Total boxes: ' + str(len(gt_boxes)))
     print('Total small: ' + str(n_small))
 
-    anchors, avg_iou = k_mean_cluster(number_anchors, gt_boxes)
+    anchors, avg_iou = k_mean_clustering(number_anchors, gt_boxes)
     print("Number of anchors: {:2} | Average IoU:{:-4f}\n\n ".format(number_anchors, avg_iou))
     anchors_file = os.path.join(output_dir, 'anchors.txt')
 
@@ -113,7 +113,7 @@ def main():
     print('Done')
 
 
-def k_mean_cluster(n_anchors, gt_boxes, loss_convergence=1e-6):
+def k_mean_clustering(n_anchors, gt_boxes, loss_convergence=1e-6):
     """
     Cluster anchors.
     """
@@ -124,10 +124,10 @@ def k_mean_cluster(n_anchors, gt_boxes, loss_convergence=1e-6):
         centroids.append(gt_boxes[centroid_index])
 
     # iterate k-means
-    anchors, avg_iou, loss = run_k_mean(n_anchors, gt_boxes, centroids)
+    anchors, avg_iou, loss = run_k_means(n_anchors, gt_boxes, centroids)
 
     while True:
-        anchors, avg_iou, curr_loss = run_k_mean(n_anchors, gt_boxes, anchors)
+        anchors, avg_iou, curr_loss = run_k_means(n_anchors, gt_boxes, anchors)
         if abs(loss - curr_loss) < loss_convergence:
             break
         loss = curr_loss
@@ -135,7 +135,7 @@ def k_mean_cluster(n_anchors, gt_boxes, loss_convergence=1e-6):
     return anchors, avg_iou
 
 
-def run_k_mean(n_anchors, boxes, centroids):
+def run_k_means(n_anchors, boxes, centroids):
     '''
     Perform K-mean clustering on training ground truth to generate anchors.
     In the paper, authors argues that generating anchors through anchors would improve Recall of the network

@@ -46,6 +46,8 @@ def custom_loss(y_true, y_pred):
     :return: a scalar
             loss value
     """
+    y_pred = tf.verify_tensor_all_finite(y_pred, 'NaN detected in y_pred')
+
     # Config Anchors
     anchors = get_anchors(CFG.ANCHORS_PATH)
     if CFG.SHALLOW_DETECTOR:
@@ -70,6 +72,7 @@ def custom_loss(y_true, y_pred):
     pred_box_xy = (tf.sigmoid(y_pred[:, :, :, :, :2]) + c_xy) / output_size
     pred_box_wh = tf.exp(y_pred[:, :, :, :, 2:4]) * \
         np.reshape(anchors, [1, 1, 1, CFG.N_ANCHORS, 2]) / output_size
+    
     pred_box_wh = tf.sqrt(pred_box_wh)
     pred_box_conf = tf.sigmoid(y_pred[:, :, :, :, 4:5])
     pred_box_prob = tf.nn.softmax(y_pred[:, :, :, :, 5:])
@@ -89,13 +92,18 @@ def custom_loss(y_true, y_pred):
     true_box_bd = true_box_xy + 0.5 * true_tem_wh
     true_box_area = true_tem_wh[:, :, :, :, 0] * true_tem_wh[:, :, :, :, 1]
 
+    tf_zero = tf.constant(0,dtype=tf.float32)
+    tf_one = tf.constant(1,dtype=tf.float32)
+    
     intersect_ul = tf.maximum(pred_box_ul, true_box_ul)
     intersect_br = tf.minimum(pred_box_bd, true_box_bd)
-    intersect_wh = tf.maximum(intersect_br - intersect_ul, 0.0)
+    intersect_wh = tf.maximum(intersect_br - intersect_ul, tf_zero)
     intersect_area = intersect_wh[..., 0] * intersect_wh[..., 1]
 
-    iou = tf.truediv(intersect_area, true_box_area +
-                     pred_box_area - intersect_area)
+    union_area = true_box_area + pred_box_area - intersect_area + 0.0001
+
+    iou = tf.truediv(intersect_area,  union_area)
+
     best_box = tf.equal(iou, tf.reduce_max(iou, [3], True))
     best_box = tf.to_float(best_box)
     true_box_conf = tf.expand_dims(best_box * y_true[:, :, :, :, 4], -1)
@@ -105,7 +113,10 @@ def custom_loss(y_true, y_pred):
     weight_coor = 5.0 * tf.concat(4 * [true_box_conf], 4)
     true_boxes = tf.concat([true_box_xy, true_box_wh], 4)
     pred_boxes = tf.concat([pred_box_xy, pred_box_wh], 4)
-    loc_loss = tf.pow(true_boxes - pred_boxes, 2) * weight_coor
+
+    loc_loss = tf.square(true_boxes - pred_boxes) * weight_coor
+
+
     loc_loss = tf.reshape(
         loc_loss, [-1, tf.cast(GRID_W * GRID_H, tf.int32) * CFG.N_ANCHORS * 4])
     loc_loss = tf.reduce_mean(tf.reduce_sum(loc_loss, 1))
@@ -124,11 +135,13 @@ def custom_loss(y_true, y_pred):
     category_loss = tf.reshape(
         category_loss, [-1, tf.cast(GRID_W * GRID_H, tf.int32) * CFG.N_ANCHORS * CFG.N_CLASSES])
     category_loss = tf.reduce_mean(tf.reduce_sum(category_loss, 1))
-
     loss = 0.5 * (loc_loss + obj_conf_loss + category_loss)
+
     if CFG.DEBUG_LOSS:
         loss = tf.Print(loss, [loc_loss, obj_conf_loss,
                             category_loss], message='Loc, obj, conf ')
+
+
     return loss
 
 def _create_offset_map(output_shape):

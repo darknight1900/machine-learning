@@ -132,6 +132,8 @@ class DataBatchGenerator:
                     # pdb.set_trace()
                     if r < CFG.FEAT_W and c < CFG.FEAT_H:
                         y_batch[i, c, r, best_anchor, :] = object_mask    # Construct Feature map ground truth
+                        # y_batch[i, c, r, :, :] = CFG.N_ANCHORS* [object_mask]    # Construct Feature map ground truth
+                        
             y_batch = y_batch.reshape([self.batch_size,  CFG.FEAT_H, CFG.FEAT_W, CFG.N_ANCHORS*(5 + CFG.N_CLASSES)])
             yield x_batch, y_batch
     

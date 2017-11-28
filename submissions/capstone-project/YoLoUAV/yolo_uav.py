@@ -35,7 +35,6 @@ def interval_overlap(interval_a, interval_b):
         else:
             return min(x2, x4) - x3
 
-
 def bbox_iou(box1, box2):
     x1_min = box1.x - box1.w / 2
     x1_max = box1.x + box1.w / 2
@@ -73,7 +72,7 @@ def get_anchors(anchors_path):
 
 
 def get_classes(classes_path):
-    '''loads the classes'''
+    '''loads the classes from a file'''
     with open(classes_path) as f:
         class_names = f.readlines()
     class_names = [c.strip() for c in class_names]
@@ -132,12 +131,15 @@ def get_recall_precision(bboxes_pred, bboxes_gt, iou_threshold=0.4, num_classes=
         if bg.c > 0.0:
             classes_detection_results[bg.get_label()][2] += 1
     # Now calculate Precision and Recall for each classes
+    result = []
     for key, value in classes_detection_results.items():
         prec = value[0] / float(value[0] + value[1] + 0.00001)
         recall = value[0] / float(value[0] + value[2] + 0.00001)
+        result.append((key, prec, recall))
         print(classes[key], 'True Positive:', value[0],
               'False Positive:', value[1], 'False Negative:', value[2])
         print(classes[key], 'precision:', prec, 'recall:', recall)
+    return result
 
 
 def compute_recall_precision(hdf5_data, yolo_detector, weights=None, train='valid', num_samples=1024):
@@ -190,10 +192,12 @@ def compute_recall_precision(hdf5_data, yolo_detector, weights=None, train='vali
         image_data = x_batch[i]
         boxes = yolo_detector.decode_netout(netouts[i])
         y_pred += boxes
-    get_recall_precision(y_pred, y_batch)
+    return get_recall_precision(y_pred, y_batch)
 
 
 def draw_boxes(image, boxes, labels):
+    image = np.array(image * 255, dtype=np.uint8)
+    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
     for box in boxes:
         xmin = int((box.x - box.w / 2) * image.shape[1])
         xmax = int((box.x + box.w / 2) * image.shape[1])
@@ -210,9 +214,8 @@ def draw_boxes(image, boxes, labels):
                     (xmin, ymin - 13),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     1e-3 * image.shape[0],
-                    (0, 0, 255), 2)
+                    (0, 255, 0), 2)
     return image
-
 
 class YOLODetector(object):
     def __init__(self, feature_extractor_name,
@@ -267,17 +270,12 @@ class YOLODetector(object):
         # create the final object detection layer
         output_tensor = Conv2D(self.nb_box * (4 + 1 + self.nb_class),
                                (1, 1), strides=(1, 1),
-                               padding='same',
+                               padding='same', #
                                name='conv_final',
                                kernel_regularizer=l2(5e-4))(feature_model.output)  # Xavier normal initializer
 
-        # output_tensor = Reshape((self.grid_h, self.grid_w, self.nb_box, 4 + 1 + self.nb_class))(output_tensor)
-        # output = Lambda(lambda args: args[0])([output, self.true_boxes])
-
-        # self.model = Model([input_image, self.true_boxes], output)
         self.model = Model(inputs=feature_model.inputs, outputs=output_tensor)
-        # print a summary of the whole model
-        # self.model.summary()
+
 
     def load_weights(self, weight_path):
         self.model.load_weights(weight_path)

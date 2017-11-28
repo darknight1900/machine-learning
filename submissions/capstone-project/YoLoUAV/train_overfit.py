@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 parser = ArgumentParser(description="Over-fit one sample to validate YOLOv2 Loss Function")
 
 parser.add_argument('-p', '--path', help="Path to training text file ",
-                    type=str, default=None)
+                    type=str, default='~/data/PascalVOC/VOCdevkit/pascal_voc_07_12_person_vehicle.hdf5')
 
 parser.add_argument('-w', '--weights', help="Path to pre-trained weight files",
                     type=str, default=None)
@@ -34,37 +34,36 @@ parser.add_argument('-e', '--epochs', help='Number of epochs for training',
 parser.add_argument('-b', '--batch', help='Number of batch size',
                     type=int, default=1)
 
-parser.add_argument(
-    '-d',
-    '--data_path',
-    help='path to HDF5 file containing pascal voc dataset',
-    default='~/data/PascalVOC/VOCdevkit/pascal_voc_07_12_person_vehicle.hdf5')
+parser.add_argument('-n', '--samples', help='Number of samples to overfit',
+                    type=int, default=10)
 
-args = parser.parse_args()
-annotation_path = args.path
-WEIGHTS_FILE    = args.weights
-BATCH_SIZE      = args.batch
-EPOCHS          = args.epochs
 
 def _main_():
     # ###################
     # PREPARE DATA INPUT
     # ###################
+    args = parser.parse_args()
     anchors = get_anchors(CFG.ANCHORS_PATH)
     classes = get_classes(CFG.CLASSES_PATH)
+    sample_size = args.samples
+    num_epochs = args.epochs
+    weights_path = args.weights
 
     if CFG.SHALLOW_DETECTOR:
         anchors = anchors * 2
-    print(anchors)
-    test_size = 128
-    voc_path = os.path.expanduser(args.data_path)
-    voc = h5py.File(voc_path, 'r')
-    total_test_instances = voc['train/images'].shape[0]
 
-    test_list = np.random.choice(total_test_instances, test_size, replace=False)
+    print('anchors:',anchors)
+    print('classes:', classes)
 
-    x_batch = np.zeros((test_size, CFG.IMAGE_HEIGHT, CFG.IMAGE_WIDTH, 3))
-    y_batch = np.zeros((test_size, CFG.FEAT_H, CFG.FEAT_W, CFG.N_ANCHORS, 5 + CFG.N_CLASSES))
+
+    data_path = os.path.expanduser(args.path)
+    train_data = h5py.File(data_path, 'r')
+    total_test_instances = train_data['train/images'].shape[0]
+
+    test_list = np.random.choice(total_test_instances, sample_size, replace=False)
+
+    x_batch = np.zeros((sample_size, CFG.IMAGE_HEIGHT, CFG.IMAGE_WIDTH, 3))
+    y_batch = np.zeros((sample_size, CFG.FEAT_H, CFG.FEAT_W, CFG.N_ANCHORS, 5 + CFG.N_CLASSES))
     b_batch = []
 
     cur_id = 0
@@ -79,7 +78,7 @@ def _main_():
         image_data /= 255.
         x_batch[cur_id] = image_data
 
-        boxes = voc['train/boxes'][test_id]
+        boxes = train_data['train/boxes'][test_id]
         boxes = boxes.reshape((-1, 5))
 
         # Get box parameters as x_center, y_center, box_width, box_height, class.
@@ -115,40 +114,44 @@ def _main_():
                 if max_iou < iou:
                     best_anchor = i
                     max_iou     = iou
-            print(c,r, best_anchor, max_iou, object_mask)
             if r < CFG.FEAT_W and c < CFG.FEAT_H:
                 y_batch[cur_id, c, r, best_anchor, :] = object_mask    # Construct Feature map ground truth
             
         cur_id += 1
 
-    # pdb.set_trace()
-    y_batch = y_batch.reshape([test_size,  CFG.FEAT_H, CFG.FEAT_W, CFG.N_ANCHORS*(5 + CFG.N_CLASSES)])
+    y_batch = y_batch.reshape([sample_size,  CFG.FEAT_H, CFG.FEAT_W, CFG.N_ANCHORS*(5 + CFG.N_CLASSES)])
 
     yolo_detector = YOLODetector(feature_extractor_name=CFG.FEATURE_EXTRACTOR)    
-    # yolo_detector.model.summary()
+    yolo_detector.model.summary()
+    if weights_path:
+        weights_path = os.path.expanduser(weights_path)
+        if os.path.exists(weights_path):
+            yolo_detector.model.load_weights(weights_path)
     # #################
     # COMPILE AND RUN
     # #################
     yolo_detector.model.compile(optimizer='adam', loss=custom_loss)
     
-    num_steps = 200
-        
-    yolo_detector.model.fit(x_batch, y_batch, batch_size=CFG.BATCH_SIZE, epochs=num_steps)
+    yolo_detector.model.fit(x_batch, y_batch, batch_size=CFG.BATCH_SIZE, epochs=num_epochs)
     yolo_detector.model.save_weights('overfit.weights')
 
     netout = yolo_detector.model.predict(x_batch, batch_size=CFG.BATCH_SIZE)
     netouts = netout.reshape(-1, CFG.FEAT_H, CFG.FEAT_W, CFG.N_ANCHORS, (5 + CFG.N_CLASSES))
     idx = 0
     boxes_pred = []
+    outpath = '/tmp/output'
+    if not os.path.exists(outpath):
+        os.mkdir(outpath)
+        
     for i in range(len(netouts)):
         image_data = x_batch[i]
         boxes  = yolo_detector.decode_netout(netouts[i])
         boxes_pred += boxes
         img = draw_boxes(image_data, boxes, classes)
-        img = np.array(img * 255, dtype=np.uint8)
-        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-        cv2.imwrite('/tmp/output/img_'+str(i)+'.jpg',img)    
-    # import pdb; pdb.set_trace()
-    get_recall_precision(boxes_pred, b_batch)
+        cv2.imwrite(os.path.join(outpath, 'img_'+str(i)+'.jpg'),img)    
+    # calculate precision and recall 
+    prec_recall = get_recall_precision(boxes_pred, b_batch)
+    for pr in prec_recall:
+        print(classes[pr[0], 'precision:', pr[1], 'recall:', pr[2])
 if __name__ == "__main__":
     _main_()

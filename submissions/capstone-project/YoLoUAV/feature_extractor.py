@@ -7,8 +7,9 @@ from keras.layers import MaxPooling2D, BatchNormalization, Flatten, Dense, Lambd
 from keras.layers.merge import concatenate
 from keras.applications.mobilenet import MobileNet
 from keras.layers.advanced_activations import LeakyReLU
+from keras.regularizers import l2
 
-from keras_darknet19 import Darknet19
+from keras_darknet19 import Darknet19, conv_block
 from keras_mobilenet import depthwise_conv_block, relu6
 
 
@@ -28,7 +29,6 @@ def space_to_depth_x2_output_shape(input_shape):
     return (input_shape[0], input_shape[1] // 2, input_shape[2] // 2, 4 *
             input_shape[3]) if input_shape[1] else (input_shape[0], None, None,
                                                     4 * input_shape[3])
-
 
 def space_to_depth_x4(x):
     """Thin wrapper for Tensorflow space_to_depth with block_size=4."""
@@ -83,7 +83,7 @@ class Darknet19Feature(FeatureExtractor):
         by introducing an extra scale of feature to improve the detection accuracy. 
     """
 
-    def __init__(self, input_tensor, weights=None, shallow_detection=True, three_scale_detection=False):
+    def __init__(self, input_tensor, weights='COCO', shallow_detection=True, three_scale_detection=False):
 
         fine_grained_layers = [17, 27, 43]  # [1/4, 1/8, 1/16]
         if shallow_detection:
@@ -108,48 +108,30 @@ class Darknet19Feature(FeatureExtractor):
             for i in range(0, min(len(feature_layers), len(trained_layers))):
                 weights = trained_layers[i].get_weights()
                 feature_layers[i].set_weights(weights)
+        x2 = feature_model.output
+        x2 = conv_block(x2, num_fina_layers, (3, 3), name='detector_1')
+        x2 = conv_block(x2, num_fina_layers, (3, 3), name='detector_2')
 
         x0 = feature_model.layers[fine_grained_layers[0]].output
         x1 = feature_model.layers[fine_grained_layers[1]].output
-        x2 = feature_model.output
 
         if shallow_detection:
-            x0 = Conv2D(8, (1, 1), strides=(1, 1),
-                        padding='same', use_bias=False)(x0)
-            x1 = Conv2D(32, (1, 1), strides=(1, 1),
-                        padding='same', use_bias=False)(x1)
+            x0 = conv_block(x0, 8, (1, 1))
+            x1 = conv_block(x1, 32, (1, 1))
             num_fina_layers = 512
 
         else:
-            x0 = Conv2D(16, (1, 1), strides=(1, 1),
-                        padding='same', use_bias=False)(x0)
-            x1 = Conv2D(64, (1, 1), strides=(1, 1),
-                        padding='same', use_bias=False)(x1)
+            x0 = conv_block(x0, 16, (1, 1))
+            x1 = conv_block(x1, 64, (1, 1))
             num_fina_layers = 1024
 
-        # Layer 19
-        x2 = Conv2D(num_fina_layers, (3, 3), strides=(1, 1),
-                    padding='same', name='conv_19', use_bias=False)(x2)
-        x2 = BatchNormalization(name='norm_19')(x2)
-        x2 = LeakyReLU(alpha=0.1)(x2)
-
-        # Layer 20
-        x2 = Conv2D(num_fina_layers, (3, 3), strides=(1, 1),
-                    padding='same', name='conv_20', use_bias=False)(x2)
-        x2 = BatchNormalization(name='norm_20')(x2)
-        x2 = LeakyReLU(alpha=0.1)(x2)
-
         # earlier net feature
-        x0 = BatchNormalization(name='norm_space_to_depth_x4')(x0)
-        x0 = LeakyReLU(alpha=0.1)(x0)
         x0_reshaped = Lambda(
             space_to_depth_x4,
             output_shape=space_to_depth_x4_output_shape,
             name='space_to_depth_x4')(x0)
 
         # earlier net feature
-        x1 = BatchNormalization(name='norm_space_to_depth_x2')(x1)
-        x1 = LeakyReLU(alpha=0.1)(x1)
         x1_reshaped = Lambda(
             space_to_depth_x2,
             output_shape=space_to_depth_x2_output_shape,
@@ -160,10 +142,7 @@ class Darknet19Feature(FeatureExtractor):
         else:
             x = concatenate([x1_reshaped, x2])
 
-        x = Conv2D(num_fina_layers, (3, 3), strides=(1, 1),
-                   padding='same', name='conv_detection', use_bias=False)(x)
-        x = BatchNormalization(name='norm_detection_feature')(x)
-        x = LeakyReLU(alpha=0.1)(x)
+        x = conv_block(x, 1024, (3, 3))
         self.feature_model = Model(feature_model.inputs, x)
 
     def normalize(self, image):
