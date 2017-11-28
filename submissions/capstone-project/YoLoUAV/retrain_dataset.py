@@ -1,0 +1,122 @@
+"""
+Overfit one image with 1000 epochs to test the loss function properly
+"""
+import random
+import h5py
+import os
+import PIL
+import io
+import cv2
+
+from argparse import ArgumentParser
+from loss import custom_loss
+from yolo_uav import *
+import numpy as np
+import cfg as CFG
+
+import keras
+import tensorflow as tf
+from datagen import DataBatchGenerator
+from keras.models import load_model
+import keras.backend as K
+import matplotlib.pyplot as plt
+
+parser = ArgumentParser(
+    description="Retrain the Yolo-UAV for a dataset")
+
+parser.add_argument('-p',
+                    '--data_path',
+                    help='path to HDF5 file containing dataset',
+                    default='~/data/PascalVOC/VOCdevkit/pascal_voc_07_12_person_vehicle.hdf5')
+
+
+parser.add_argument('-w',
+                    '--weights_path',
+                    help="Path to pre-trained weight files",
+                    type=str, default=None)
+
+parser.add_argument('-e',
+                    '--num_epochs',
+                    help='Number of epochs for training',
+                    type=int, default=100)
+
+parser.add_argument('-b',
+                    '--batch_size',
+                    help='Number of batch size',
+                    type=int, default=CFG.BATCH_SIZE)
+
+
+def _main_():
+    args = parser.parse_args()
+    data_path = args.data_path
+    weights_path = args.weights_path
+    batch_size = args.batch_size
+    num_epochs = args.num_epochs
+
+    # ###################
+    # PREPARE DATA INPUT
+    # ###################
+
+    anchors = get_anchors(CFG.ANCHORS_PATH)
+    classes = get_classes(CFG.CLASSES_PATH)
+    data_path = os.path.expanduser(data_path)
+
+    if CFG.SHALLOW_DETECTOR:
+        anchors = anchors * 2
+    assert(CFG.N_ANCHORS == len(anchors))
+    assert(CFG.N_CLASSES == len(classes))
+    assert(os.path.exists(data_path))
+    hdf5_data = h5py.File(data_path, 'r')
+    num_training = hdf5_data['train/images'].shape[0]
+
+    print("==========================")
+    print('\t anchors:', anchors)
+    print('\t classes:', classes)
+    print('\t train_path:', data_path)
+    print('\t num_training:', num_training)
+    print("==========================")
+
+    yolo_detector = YOLODetector(feature_extractor_name=CFG.FEATURE_EXTRACTOR)
+    detect_model = yolo_detector.model
+    detect_model.summary()
+    # #################
+    # COMPILE AND RUN
+    # #################
+    detect_model.compile(optimizer='adam', loss=custom_loss)
+
+    train_batch_gen = DataBatchGenerator(hdf5_data, train='train', jitter=True)
+    valid_batch_gen = DataBatchGenerator(hdf5_data, train='valid')
+
+    logging = TensorBoard()
+    early_stopping = EarlyStopping(
+        monitor='val_loss', min_delta=0, patience=10, verbose=1, mode='auto')
+    train_steps_per_epoch = train_batch_gen.training_instances // batch_size
+    valid_steps_per_epoch = valid_batch_gen.training_instances // batch_size
+    print('train_steps_per_epoch=', train_steps_per_epoch)
+    print('valid_steps_per_epoch=', valid_steps_per_epoch)
+    
+    num_loop_epochs = 5
+    loop = num_epochs // num_loop_epochs
+    for i in range(loop):
+        weight_name = 'weights/' + 'best_{}{}{}_loop_{}.h5'.format(
+            CFG.FEATURE_EXTRACTOR, int(CFG.SHALLOW_DETECTOR), int(CFG.USE_THREE_SCALE_FEATURE), i)
+
+        checkpoint = ModelCheckpoint(
+            weight_name, monitor='val_loss', save_weights_only=True, save_best_only=True)
+        detect_model.fit_generator(generator=train_batch_gen.flow_from_hdf5(),
+                                   validation_data=valid_batch_gen.flow_from_hdf5(),
+                                   steps_per_epoch=train_steps_per_epoch,
+                                   validation_steps=valid_steps_per_epoch,
+                                   callbacks=[checkpoint, logging],
+                                   epochs=num_loop_epochs,
+                                   workers=1,
+                                   verbose=1)
+        weight_name = 'weights/' + '{}{}{}_loop_{}.h5'.format(
+            CFG.FEATURE_EXTRACTOR, CFG.SHALLOW_DETECTOR, CFG.USE_THREE_SCALE_FEATURE, i)
+        detect_model.save_weights(weight_name)
+        compute_recall_precision(
+            hdf5_data, yolo_detector, weight_name, train='valid', num_samples=1024)
+
+
+if __name__ == "__main__":
+    _main_()
