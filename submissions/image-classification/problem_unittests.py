@@ -175,8 +175,9 @@ def test_output(output):
 def test_conv_net(conv_net):
     test_x = tf.placeholder(tf.float32, [None, 32, 32, 3])
     test_k = tf.placeholder(tf.float32)
+    test_p = tf.placeholder(tf.bool)
 
-    logits_out = conv_net(test_x, test_k)
+    logits_out = conv_net(test_x, test_k, test_p)
 
     assert logits_out.get_shape().as_list() == [None, 10],\
         'Incorrect Model Output.  Found {}'.format(logits_out.get_shape().as_list())
